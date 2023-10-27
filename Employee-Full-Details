@@ -1,0 +1,424 @@
+<!-- ==============================EmpFullDetails=============================== -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Segregate and Count Domain-Wise Items and Pie Chart on Views</title>
+  </head>
+  <body>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script
+      type="text/javascript"
+      src="https://ajax.aspnetcdn.com/ajax/4.0/1/MicrosoftAjax.js"
+    ></script>
+    <script type="text/javascript" src="/_layouts/15/sp.runtime.js"></script>
+    <script type="text/javascript" src="/_layouts/15/sp.js"></script>
+
+    <div>
+      <button onclick="SegregateAndCountItems();" type="button">
+        Segregate and Count Domain-Wise Items
+      </button>
+      <div id="messageDiv"></div>
+    </div>
+    <hr />
+    <div style="height: 400px; width: 400px">
+      Date-Wise Pie Chart on View
+      <canvas id="myPieChart"></canvas>
+    </div>
+
+    <script>
+      function SegregateAndCountItems() {
+        var domainWiseCounts = {};
+
+        var url =
+          _spPageContextInfo.webAbsoluteUrl +
+          "/_api/web/lists/getbytitle('EmpDetails')/items?$select=Title";
+
+        $.ajax({
+          url: url,
+          type: "GET",
+          headers: {
+            accept: "application/json;odata=verbose",
+          },
+          success: function (data) {
+            var items = data.d.results;
+            console.log("Items of emails", items);
+            for (var i = 0; i < items.length; i++) {
+              var email = items[i].Title;
+              var domain = getEmailDomain(email);
+
+              if (domain in domainWiseCounts) {
+                domainWiseCounts[domain]++;
+              } else {
+                domainWiseCounts[domain] = 1;
+              }
+            }
+
+            for (var domain in domainWiseCounts) {
+              createOrUpdateDomainList(domain, domainWiseCounts[domain]); //ab-inbev.com: 16
+            }
+
+            var message = "<h3>Domain-Wise Counts</h3>";
+            message += "<table border='1' style='border-color: green;'>";
+            message += "<tr><th>Domain</th><th>Count</th></tr>";
+            for (var domain in domainWiseCounts) {
+              message +=
+                "<tr><td>" +
+                domain +
+                "</td><td>" +
+                domainWiseCounts[domain] +
+                "</td></tr>";
+            }
+            message += "</table>";
+
+            document.getElementById("messageDiv").innerHTML = message;
+          },
+          error: function (jqXHR, errorThrown) {
+            if (jqXHR.status === 404) {
+              alert(
+                "The 'EmpDetails' list does not exist at the specified site URL."
+              );
+            } else {
+              alert("Error: " + errorThrown);
+            }
+          },
+        });
+      }
+
+      function getEmailDomain(email) {
+        // fn to extract the domain(@ab-inbev.com)
+        return email.split("@")[1];
+      }
+
+      function createOrUpdateDomainList(domain, itemCount) {
+        // fn to create or update domain-wise lists
+        var listTitle = "DomainList_" + domain + "_" + new Date().getTime(); // Add a unique identifier
+        var listUrl =
+          _spPageContextInfo.webAbsoluteUrl +
+          "/_api/web/lists/getbytitle('" +
+          listTitle +
+          "')";
+
+        $.ajax({
+          url: listUrl,
+          type: "GET",
+          headers: {
+            accept: "application/json;odata=verbose",
+          },
+          success: function (data) {
+            createNewDomainList(listTitle, itemCount);
+          },
+          error: function (jqXHR, errorThrown) {
+            if (jqXHR.status === 404) {
+              // If list does not exist, we will create a new one
+              createNewDomainList(listTitle, itemCount);
+            } else {
+              alert("Error: " + errorThrown);
+            }
+          },
+        });
+      }
+
+      function createNewDomainList(listTitle, itemCount) {
+        // fn to create a new domain-wise list
+        var listCreationInfo = new SP.ListCreationInformation();
+        listCreationInfo.set_title(listTitle);
+        listCreationInfo.set_templateType(SP.ListTemplateType.genericList);
+
+        var context = new SP.ClientContext(_spPageContextInfo.webAbsoluteUrl);
+        var list = context.get_web().get_lists().add(listCreationInfo);
+        list.set_description("List for domain-wise items");
+
+        list.update();
+        context.executeQueryAsync(
+          function () {
+            console.log("Success, list created");
+          },
+          function (sender, args) {
+            alert("Error creating list: " + args.get_message());
+          }
+        );
+      }
+    </script>
+
+    <!-- Date-Wise Pie Chart on View  -->
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        $.ajax({
+            url: _spPageContextInfo.webAbsoluteUrl + "/_api/web/lists/getbytitle('EmpDetails')/items?$select=View,LastVisited",
+            type: "GET",
+            headers: {
+              accept: "application/json;odata=verbose",
+            },
+            success: function (data) {
+              var items = data.d.results;
+          
+              var dataForChart = {};
+          
+              items.forEach(function (item) {
+                var date = new Date(item.LastVisited);
+                var views = item.View;
+          
+                // Date format "Thu Oct 19 2023"
+                var formattedDate = date.toString().split(" ").slice(0, 4).join(" ");
+          
+                if (dataForChart[formattedDate]) {
+                  dataForChart[formattedDate] += views;
+                } else {
+                  dataForChart[formattedDate] = views;
+                }
+              });
+          
+              var dataForChartArray = [];
+              for (var formattedDate in dataForChart) {
+                dataForChartArray.push([formattedDate, dataForChart[formattedDate]]);
+              }
+          
+              createPieChart(dataForChartArray);
+            },
+            error: function (jqXHR, textStatus, errorThrown) {
+              alert("Error: " + errorThrown);
+            },
+          });
+          
+      //Graph-Chart code
+      function createPieChart(dataForChart) {
+        var labels = [];
+        var data = [];
+        dataForChart.forEach(function (item) {
+          labels.push(item[0]);
+          data.push(item[1]);
+        });
+
+        var ctx = document.getElementById("myPieChart").getContext("2d");
+
+        var myPieChart = new Chart(ctx, {
+          type: "pie",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                data: data,
+                backgroundColor: [
+                  "#7B3C93",
+                  "#E61A23",
+                  "#E02A62",
+                  "#FFD92F",
+                  "#66C2A5",
+                  "#A6D854",
+                ],
+              },
+            ],
+          },
+          options: {
+            title: {
+              display: true,
+              text: "Views by Date",
+            },
+          },
+        });
+      }
+
+      createPieChart(dataForChart);
+    </script>
+  </body>
+</html>
+
+<!-- ===============================Employees Details=============================== -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Employees Details</title>
+  </head>
+  <body>
+    <!-- CDNs -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script
+      type="text/javascript"
+      src="https://ajax.aspnetcdn.com/ajax/4.0/1/MicrosoftAjax.js"
+    ></script>
+    <script type="text/javascript" src="/_layouts/15/sp.runtime.js"></script>
+    <script type="text/javascript" src="/_layouts/15/sp.js"></script>
+
+    <!-- Buttons to perform operations -->
+    <button onclick="GetListItems('getDiv');" type="button">
+      Get All List Items using GET Operation
+    </button>
+    <div id="getDiv"></div>
+    <br /><br />
+
+    <button onclick="InsertItem();" type="button">
+      Insert Item to SharePoint List using POST Operation
+    </button>
+    <div id="insertDiv"></div>
+    <br /><br />
+
+    <button onclick="UpdateItem();" type="button">
+      Update Item using UPDATE Operation
+    </button>
+    <div id="updateDiv"></div>
+    <br /><br />
+
+    <button onclick="DeleteItem();" type="button">
+      Delete Item using DELETE Operation
+    </button>
+    <div id="deleteDiv"></div>
+
+    <!-- GET LIST -->
+    <script>
+      function GetListItems(divId) {
+        let url =
+          _spPageContextInfo.webAbsoluteUrl +
+          "/_api/web/lists/getByTitle('EmployeesDetails')/items";
+        $.ajax({
+          url: url,
+          type: "GET",
+          headers: {
+            accept: "application/json;odata=verbose",
+          },
+          success: function (data) {
+            console.log("Number of items retrieved: ", data.d.results.length);
+            displayTable(data, divId);
+          },
+          error: onError,
+        });
+      }
+    </script>
+
+    <!-- Insert a new item into the SharePoint list -->
+    <script>
+      function InsertItem() {
+        let context = new SP.ClientContext(
+          "https://anheuserbuschinbev.sharepoint.com/sites/Employees"
+        );
+        let list = context.get_web().get_lists().getByTitle("EmployeesDetails");
+
+        let itemCreateInfo = new SP.ListItemCreationInformation();
+        let newItem = list.addItem(itemCreateInfo);
+
+        newItem.set_item("EmpName", "Ishant");
+        newItem.set_item("EmpID", "C454454");
+
+        newItem.update();
+        context.load(newItem);
+
+        context.executeQueryAsync(
+          function () {
+            alert("Item created successfully. Item ID: " + newItem.get_id());
+            GetListItems("insertDiv");
+          },
+          function (sender, args) {
+            alert("Error creating item: " + args.get_message());
+          }
+        );
+      }
+    </script>
+
+    <!-- Function to update an item in the SharePoint list -->
+    <script>
+      function UpdateItem() {
+        var context = new SP.ClientContext(
+          "https://anheuserbuschinbev.sharepoint.com/sites/Employees"
+        );
+        var list = context.get_web().get_lists().getByTitle("EmployeesDetails");
+
+        var itemId = 3; //hardcoded assumed id
+        var string = "C337838";
+
+        var item = list.getItemById(itemId);
+        item.set_item("EmpID", string);
+
+        item.update();
+
+        context.executeQueryAsync(
+          function () {
+            alert("Item updated successfully.");
+            GetListItems("updateDiv");
+          },
+          function (sender, args) {
+            alert("Error updating item: " + args.get_message());
+          }
+        );
+      }
+    </script>
+
+    <!-- Function to delete an item from the SharePoint list based on EmpName -->
+    <script>
+      function DeleteItem() {
+        console.log("This is delete");
+        var context = new SP.ClientContext(
+          "https://anheuserbuschinbev.sharepoint.com/sites/Employees"
+        );
+        var list = context.get_web().get_lists().getByTitle("EmployeesDetails");
+
+        // EmpName delete
+        var empNameToDelete = "Ishant";
+
+        var camlQuery = new SP.CamlQuery();
+        camlQuery.set_viewXml(
+          "<View><Query><Where><Eq><FieldRef Name='EmpName'/><Value Type='Text'>" +
+            empNameToDelete +
+            "</Value></Eq></Where></Query></View>"
+        );
+
+        var items = list.getItems(camlQuery);
+        context.load(items);
+
+        context.executeQueryAsync(
+          function () {
+            if (items.get_count() > 0) {
+              var item = items.getItemAtIndex(0);
+              item.deleteObject();
+
+              context.executeQueryAsync(
+                function () {
+                  alert("Item deleted successfully.");
+                  GetListItems("deleteDiv");
+                },
+                function (sender, args) {
+                  alert("Error deleting item: " + args.get_message());
+                }
+              );
+            } else {
+              alert("Item not found with EmpName: " + empNameToDelete);
+            }
+          },
+          function (sender, args) {
+            alert("Error retrieving item: " + args.get_message());
+          }
+        );
+      }
+    </script>
+
+    <!-- Function to display the retrieved items in a table -->
+    <script>
+      function displayTable(data, divId) {
+        let items = data.d.results;
+        let table = "<table><tr><th>Emp Name</th><th>Emp ID</th></tr>";
+
+        for (let i = 0; i < items.length; i++) {
+          table +=
+            "<tr><td>" +
+            items[i].EmpName +
+            "</td><td>" +
+            items[i].EmpID +
+            "</td></tr>";
+        }
+        table += "</table";
+
+        document.getElementById(divId).innerHTML = table;
+      }
+
+      function onError(error) {
+        alert(JSON.stringify(error));
+      }
+    </script>
+  </body>
+</html>
